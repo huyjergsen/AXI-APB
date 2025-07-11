@@ -2,38 +2,38 @@
 module axi_interface#(
     parameter  DATA_WIDTH = 32,
     parameter  ADDR_WIDTH = 32,
-    parameter  ID_WIDTH = 4,
+    parameter  ID_WIDTH = 4
 )(
     input logic clk,
     input logic reset,
+    
     //AXI WRITE ADDRESS signals
-    input logic awvalid, //data valid
-    output logic awready, //data ready
-    input logic [ADDR_WIDTH-1:0] awaddr,    //data address
-    input logic [ID_WIDTH-1:0] awid,        //data id
-    input logic [7:0] awlen,                //data length in 1 burst
-    input logic [1:0] awburst,              //burst type: 2'b00: FIXED, 2'b01: INCR, 2'b10: WRAP
-    input logic [2:0] awprot,               //protection type: 3'b000: UNPRIV, 3'b001: PRIV, 3'b010: SECURE, 3'b011: SECURE_UNPRIV
-    input logic [2:0] awsize,               //data size: 3'b000: 8bit, 3'b001: 16bit, 3'b010: 32bit, 3'b011: 64bit
-    input logic [1:0] awlock,               //lock type: 2'b00: NORMAL, 2'b01: EXCLUSIVE
-    input logic [3:0] awcache,              //cache type: 4'b0000: CACHEABLE, 4'b0001: UNCACHED, 4'b0010: BUFFERABLE, 4'b0011: UNCACHED_BUFFERABLE
-    input logic [3:0] awqos,                //quality of service, 4'b0000: LOW_LATENCY, 4'b0001: MEDIUM_LATENCY, 4'b0010: HIGH_LATENCY, 4'b0011: HIGHEST_LATENCY
-    input logic [3:0] awregion,             //region, 4'b0000: REGION_0, 4'b0001: REGION_1, 4'b0010: REGION_2, 4'b0011: REGION_3
-    input logic [3:0] awid,                 //id, 4'b0000: ID_0, 4'b0001: ID_1, 4'b0010: ID_2, 4'b0011: ID_3
+    input logic awvalid,
+    output logic awready,
+    input logic [ADDR_WIDTH-1:0] awaddr,
+    input logic [ID_WIDTH-1:0] awid,
+    input logic [7:0] awlen,
+    input logic [1:0] awburst,
+    input logic [2:0] awprot,
+    input logic [2:0] awsize,
+    input logic awlock,
+    input logic [3:0] awcache,
+    input logic [3:0] awqos,
+    input logic [3:0] awregion,
 
     //AXI WRITE DATA signals
     input logic wvalid,
     output logic wready,
-    input logic [DATA_WIDTH-1:0] wdata,     //data
-    input logic [DATA_WIDTH/8-1:0] wstrb,   //write strobe, indicate which bytes of the data are valid
-    input logic wlast,                      //last transaction in a burst
-    input logic [ID_WIDTH-1:0] wid,         //id
+    input logic [DATA_WIDTH-1:0] wdata,
+    input logic [DATA_WIDTH/8-1:0] wstrb,
+    input logic wlast,
+    input logic [ID_WIDTH-1:0] wid,
 
     //AXI WRITE RESPONSE signals
     output logic bvalid,
     input logic bready,
-    input logic [ID_WIDTH-1:0] bid,         //id
-    input logic [1:0] bresp,                //response: 2'b00: OKAY, 2'b01: EXOKAY, 2'b10: SLVERR, 2'b11: DECERR
+    output logic [ID_WIDTH-1:0] bid,
+    output logic [1:0] bresp,
 
     //AXI READ ADDRESS signals
     input logic arvalid,
@@ -44,20 +44,61 @@ module axi_interface#(
     input logic [1:0] arburst,
     input logic [2:0] arprot,
     input logic [2:0] arsize,
-    input logic [1:0] arlock,
+    input logic arlock,
     input logic [3:0] arcache,
     input logic [3:0] arqos,
     input logic [3:0] arregion,
-    input logic [3:0] arid,
     
     //AXI READ DATA signals
     output logic rvalid,
     input logic rready,
-    input logic [ID_WIDTH-1:0] rid,
-    input logic [DATA_WIDTH-1:0] rdata,
-    input logic rlast,
-    input logic [1:0] rresp,
-)
+    output logic [ID_WIDTH-1:0] rid,
+    output logic [DATA_WIDTH-1:0] rdata,
+    output logic rlast,
+    output logic [1:0] rresp,
+    
+    // Internal command interface
+    output logic cmd_valid,
+    input logic cmd_ready,
+    output logic [ADDR_WIDTH-1:0] cmd_addr,
+    output logic cmd_write,
+    output logic [ID_WIDTH-1:0] cmd_id,
+    output logic [7:0] cmd_len,
+    output logic [1:0] cmd_burst,
+    output logic [2:0] cmd_size,
+    output logic [2:0] cmd_prot,
+    
+    // Internal write data interface
+    output logic wdata_valid,
+    input logic wdata_ready,
+    output logic [DATA_WIDTH-1:0] wdata_data,
+    output logic [DATA_WIDTH/8-1:0] wdata_strb,
+    output logic wdata_last,
+    output logic [ID_WIDTH-1:0] wdata_id,
+    
+    // Internal read data interface  
+    input logic rdata_valid,
+    output logic rdata_ready,
+    input logic [DATA_WIDTH-1:0] rdata_data,
+    input logic [ID_WIDTH-1:0] rdata_id,
+    input logic rdata_last,
+    input logic [1:0] rdata_resp,
+    
+    // Internal write response interface
+    input logic bresp_valid,
+    output logic bresp_ready,
+    input logic [ID_WIDTH-1:0] bresp_id,
+    input logic [1:0] bresp_resp
+);
+
+// Internal registers
+logic aw_pending, ar_pending;
+logic [ADDR_WIDTH-1:0] aw_addr_reg, ar_addr_reg;
+logic [ID_WIDTH-1:0] aw_id_reg, ar_id_reg;
+logic [7:0] aw_len_reg, ar_len_reg;
+logic [1:0] aw_burst_reg, ar_burst_reg;
+logic [2:0] aw_size_reg, ar_size_reg;
+logic [2:0] aw_prot_reg, ar_prot_reg;
 
 //HANDSHAKE WRITE ADDRESS
 wire aw_handshake = awvalid && awready;
@@ -65,19 +106,22 @@ wire aw_handshake = awvalid && awready;
 always_ff @(posedge clk or posedge reset) begin
     if (reset) begin
         awready <= 1'b0;
+        aw_pending <= 1'b0;
     end else begin
-        if (!awready && awvalid) begin
-            awready <= 1'b1;
-        end else if (aw_handshake) begin
+        if (aw_handshake) begin
             awready <= 1'b0;
+            aw_pending <= 1'b1;
+            aw_addr_reg <= awaddr;
+            aw_id_reg <= awid;
+            aw_len_reg <= awlen;
+            aw_burst_reg <= awburst;
+            aw_size_reg <= awsize;
+            aw_prot_reg <= awprot;
+        end else if (!awready && awvalid && cmd_ready) begin
+            awready <= 1'b1;
+        end else if (cmd_valid && cmd_ready && cmd_write) begin
+            aw_pending <= 1'b0;
         end
-    end
-end
-
-//HANDSHAKE WRITE ADDRESS PROCESSING
-always_ff @(posedge clk) begin
-    if (aw_handshake) begin
-        //
     end
 end
 
@@ -88,79 +132,68 @@ always_ff @(posedge clk or posedge reset) begin
     if (reset) begin
         wready <= 1'b0;
     end else begin
-        if (!wready && wvalid) begin
+        if (!wready && wvalid && wdata_ready) begin
             wready <= 1'b1;
         end else if (w_handshake) begin
             wready <= 1'b0;
         end
     end
-
 end
 
-//HANDSHAKE WRITE DATA PROCESSING
-always_ff @(posedge clk) begin
-    if (w_handshake) begin
-        //
-    end
-end
-
-//HANDSHAKE WRITE RESPONSE
-wire b_handshake = bvalid && bready;
-
-always_ff @(posedge clk or posedge reset) begin
-    if (reset) begin
-        bvalid <= 1'b0;
-    end else begin
-        if (!bvalid && bready) begin
-            bvalid <= 1'b1;
-        end else if (b_handshake) begin
-            bvalid <= 1'b0;
-        end
-    end
-end
-
-always_ff @(posedge clk) begin
-    if (b_handshake) begin
-        //
-    end
-end
+// Connect write data interface
+assign wdata_valid = wvalid;
+assign wdata_data = wdata;
+assign wdata_strb = wstrb;
+assign wdata_last = wlast;
+assign wdata_id = wid;
 
 //HANDSHAKE READ ADDRESS
-wire a_readadd_handshake = arvalid && arready;
-    always_ff @(posedge clk or posedge reset) begin
-    if (reset) begin
-        arready <= 1'b0;
-    end else begin
-        if (!arready && arvalid) begin
-            arready <= 1'b1;
-        end else if (a_readadd_handshake) begin
-            arready <= 1'b0;
-        end
-    end
-end
-
-always_ff @(posedge clk) begin
-    if (a_readadd_handshake) begin
-        //
-    end
-end
-
-//HANDSHAKE READ DATA
-wire r_handshake = rvalid && rready;
+wire ar_handshake = arvalid && arready;
 
 always_ff @(posedge clk or posedge reset) begin
     if (reset) begin
-        rvalid <= 1'b0;
+        arready <= 1'b0;
+        ar_pending <= 1'b0;
     end else begin
-        if (!rvalid && rready) begin
-            rvalid <= 1'b1;
-        end else if (r_handshake) begin
-            rvalid <= 1'b0;
+        if (ar_handshake) begin
+            arready <= 1'b0;
+            ar_pending <= 1'b1;
+            ar_addr_reg <= araddr;
+            ar_id_reg <= arid;
+            ar_len_reg <= arlen;
+            ar_burst_reg <= arburst;
+            ar_size_reg <= arsize;
+            ar_prot_reg <= arprot;
+        end else if (!arready && arvalid && cmd_ready) begin
+            arready <= 1'b1;
+        end else if (cmd_valid && cmd_ready && !cmd_write) begin
+            ar_pending <= 1'b0;
         end
     end
 end
 
-always_ff @(posedge clk) begin
-    //
-    end
-end
+// Command interface - prioritize write over read
+assign cmd_valid = aw_pending || ar_pending;
+assign cmd_write = aw_pending;
+assign cmd_addr = aw_pending ? aw_addr_reg : ar_addr_reg;
+assign cmd_id = aw_pending ? aw_id_reg : ar_id_reg;
+assign cmd_len = aw_pending ? aw_len_reg : ar_len_reg;
+assign cmd_burst = aw_pending ? aw_burst_reg : ar_burst_reg;
+assign cmd_size = aw_pending ? aw_size_reg : ar_size_reg;
+assign cmd_prot = aw_pending ? aw_prot_reg : ar_prot_reg;
+
+// Read data interface
+assign rvalid = rdata_valid;
+assign rdata = rdata_data;
+assign rid = rdata_id;
+assign rlast = rdata_last;
+assign rresp = rdata_resp;
+assign rdata_ready = rready;
+
+// Write response interface
+assign bvalid = bresp_valid;
+assign bid = bresp_id;
+assign bresp = bresp_resp;
+assign bresp_ready = bready;
+
+endmodule

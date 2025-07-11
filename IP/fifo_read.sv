@@ -1,46 +1,60 @@
-// roi toi fifo
+//BUFFERING ARCHITECTURE
 module fifo_read#(
     parameter DATA_WIDTH = 32,
-    parameter ADDR_WIDTH = 32,
     parameter DEPTH = 16
 )(
     input  logic clk,
     input  logic reset,
-    input  logic rd_en,                      // read enable
-    output logic [DATA_WIDTH-1:0] rd_data,   // read data
-    output logic full,                       // full (không dùng nếu chỉ đọc)
-    output logic empty,                      // empty
-    output logic [ADDR_WIDTH-1:0] wr_ptr,    // write pointer (không thay đổi ở đây)
-    output logic [ADDR_WIDTH-1:0] rd_ptr,    // read pointer
-    output logic [ADDR_WIDTH-1:0] count,
-    output logic [ADDR_WIDTH-1:0] level
+    input  logic wr_en,
+    input  logic [DATA_WIDTH-1:0] wr_data,
+    input  logic rd_en,
+    output logic [DATA_WIDTH-1:0] rd_data,
+    output logic full,
+    output logic empty
 );
 
-    // FIFO MEMORY (giả sử đã có dữ liệu)
-    logic [DATA_WIDTH-1:0] mem [DEPTH-1:0];
-    logic [ADDR_WIDTH-1:0] rd_ptr_reg;
-    logic [ADDR_WIDTH-1:0] count_reg;
-
-    // Không có logic ghi, wr_ptr cố định
-    assign wr_ptr = '0; // hoặc giá trị bạn mong muốn
-
+    localparam ADDR_WIDTH = $clog2(DEPTH);
+    
+    logic [DATA_WIDTH-1:0] memory [DEPTH];
+    logic [ADDR_WIDTH:0] wr_ptr, rd_ptr; // Extra bit for full/empty detection
+    logic [ADDR_WIDTH:0] count;
+    
+    // Write operation
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
-            rd_ptr_reg <= 0;
-            count_reg  <= DEPTH; // Nếu mem đã đầy sẵn
-        end else begin
-            if (rd_en && !empty) begin
-                rd_ptr_reg <= rd_ptr_reg + 1;
-                count_reg  <= count_reg - 1;
-            end
+            wr_ptr <= '0;
+        end else if (wr_en && !full) begin
+            memory[wr_ptr[ADDR_WIDTH-1:0]] <= wr_data;
+            wr_ptr <= wr_ptr + 1;
         end
     end
-
-    assign rd_data = mem[rd_ptr_reg];
-    assign rd_ptr  = rd_ptr_reg;
-    assign count   = count_reg;
-    assign level   = count_reg;
-    assign full    = (count_reg == DEPTH); // luôn full nếu không có ghi
-    assign empty   = (count_reg == 0);
+    
+    // Read operation
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset) begin
+            rd_ptr <= '0;
+            rd_data <= '0;
+        end else if (rd_en && !empty) begin
+            rd_data <= memory[rd_ptr[ADDR_WIDTH-1:0]];
+            rd_ptr <= rd_ptr + 1;
+        end
+    end
+    
+    // Count management
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset) begin
+            count <= '0;
+        end else begin
+            case ({wr_en && !full, rd_en && !empty})
+                2'b10: count <= count + 1;  // Write only
+                2'b01: count <= count - 1;  // Read only
+                default: count <= count;    // No change or both
+            endcase
+        end
+    end
+    
+    // Status flags
+    assign full = (count == DEPTH);
+    assign empty = (count == 0);
 
 endmodule
