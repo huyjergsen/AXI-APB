@@ -4,7 +4,7 @@
 
 A protocol converter bridge that converts AXI4 protocol to APB4, connecting AXI masters with APB peripherals in SoC systems.
 
-##  Table of Contents
+## Table of Contents
 
 - [AXI to APB Bridge for Hardware Acceleration](#axi-to-apb-bridge-for-hardware-acceleration)
   - [Table of Contents](#table-of-contents)
@@ -21,6 +21,7 @@ A protocol converter bridge that converts AXI4 protocol to APB4, connecting AXI 
       - [Protocol Conversion Challenges](#protocol-conversion-challenges)
       - [Design Solutions](#design-solutions)
     - [FIFO Buffering Theory](#fifo-buffering-theory)
+    - [FIFO Buffering Theory](#fifo-buffering-theory-1)
       - [Purpose of FIFO Buffering](#purpose-of-fifo-buffering)
       - [FIFO Design Considerations](#fifo-design-considerations)
       - [Mathematical Analysis](#mathematical-analysis)
@@ -29,24 +30,18 @@ A protocol converter bridge that converts AXI4 protocol to APB4, connecting AXI 
   - [System Architecture](#system-architecture)
   - [Module Structure](#module-structure)
     - [FIFO Bit Packing](#fifo-bit-packing)
-  - [State Machine Diagram](#state-machine-diagram)
+  - [🔄 State Machine Diagram](#-state-machine-diagram)
     - [State Descriptions](#state-descriptions)
-  - [Simulation Results](#simulation-results)
-    - [Test Scenarios \& Results](#test-scenarios--results)
-    - [Performance Metrics](#performance-metrics)
-  - [Waveform Analysis](#waveform-analysis)
-    - [Key Signal Groups](#key-signal-groups)
-    - [Timing Analysis](#timing-analysis)
 
-##  Theoretical Foundations
+## Theoretical Foundations
 
 ### AMBA Protocol Overview
 
-The **ARM Advanced Microcontroller Bus Architecture (AMBA)** is an open-standard, on-chip interconnect specification for the connection and management of functional blocks in system-on-a-chip (SoC) designs. 
+The **ARM Advanced Microcontroller Bus Architecture (AMBA)** is an open-standard, on-chip interconnect specification for the connection and management of functional blocks in system-on-a-chip (SoC) designs.
 AMBA defines several bus protocols:
 
 - **AXI (Advanced eXtensible Interface)**: High-performance, high-frequency system backbone
-- **APB (Advanced Peripheral Bus)**: Low-power, simple peripheral interface  
+- **APB (Advanced Peripheral Bus)**: Low-power, simple peripheral interface
 - **AHB (Advanced High-performance Bus)**: High-performance system bus
 
 ### AXI4 Protocol Characteristics
@@ -57,7 +52,7 @@ AMBA defines several bus protocols:
 AXI4 uses **5 independent channels** for maximum throughput:
 
 | Channel | Direction | Purpose | Key Signals |
-|---------|-----------|---------|-------------|
+|---|---|---|---|
 | **AW** (Address Write) | Master → Slave | Write address/control | `awaddr`, `awlen`, `awsize`, `awburst` |
 | **W** (Write Data) | Master → Slave | Write data | `wdata`, `wstrb`, `wlast` |
 | **B** (Write Response) | Slave → Master | Write completion | `bresp`, `bid` |
@@ -99,7 +94,7 @@ APB uses a **2-phase protocol**:
 #### Protocol Conversion Challenges
 
 1. **Bandwidth Mismatch**: AXI (burst) → APB (single)
-2. **Timing Domains**: Different handshake mechanisms  
+2. **Timing Domains**: Different handshake mechanisms
 3. **Transaction Ordering**: Maintain AXI ordering semantics
 4. **Error Handling**: Convert response codes appropriately
 
@@ -122,6 +117,8 @@ AXI: INCR4 @ 0x1000 → APB: 0x1000, 0x1004, 0x1008, 0x100C
 
 ### FIFO Buffering Theory
 
+### FIFO Buffering Theory
+
 #### Purpose of FIFO Buffering
 
 **Decoupling**: Separate AXI and APB timing domains
@@ -140,10 +137,10 @@ Practical: 16-32 entries for most applications
 **2. Width Optimization**
 Pack related signals together to minimize memory usage:
 ```verilog
-// Request FIFO: 52 bits
+// Request FIFO: 53 bits
 {addr[31:0], write, id[3:0], len[7:0], burst[1:0], size[2:0], prot[2:0]}
 
-// Write Data FIFO: 40 bits  
+// Write Data FIFO: 41 bits
 {data[31:0], strb[3:0], last, id[3:0]}
 ```
 
@@ -186,12 +183,12 @@ The AXI to APB Bridge converts AXI4 protocol to APB4 with key features:
 | **Clock Frequency** | 100 MHz | Target frequency |
 
 ##  System Architecture
-![System Architecture](png/SystemArchitecture.png)
+![System Architecture](SystemArchitecture.png)
 
 ##  Module Structure
 
 ```
-AXI-APB/
+AXI-LOCAL/
 ├── core.sv                     #  Top-level integration
 ├── axi_interface.sv            #  AXI protocol handler  
 ├── fsm.sv                      #  State machine controller
@@ -209,14 +206,14 @@ AXI-APB/
 
 | FIFO | Width | Content |
 |------|-------|---------|
-| **Request** | 52-bit | `addr[31:0] + write + id[3:0] + len[7:0] + burst[1:0] + size[2:0] + prot[2:0]` |
-| **Write Data** | 40-bit | `data[31:0] + strb[3:0] + last + id[3:0]` |
-| **Read Data** | 38-bit | `data[31:0] + id[3:0] + last + resp[1:0]` |
+| **Request** | 53-bit | `addr[31:0] + write + id[3:0] + len[7:0] + burst[1:0] + size[2:0] + prot[2:0]` |
+| **Write Data** | 41-bit | `data[31:0] + strb[3:0] + last + id[3:0]` |
+| **Read Data** | 39-bit | `data[31:0] + id[3:0] + last + resp[1:0]` |
 
-##  State Machine Diagram
+## 🔄 State Machine Diagram
 
 The FSM implements **11 states** with comprehensive error handling:
-![Finite State Diagram](png/FiniteStateDiagram.png)
+![Finite State Diagram](FiniteStateDiagram.png)
 
 ### State Descriptions
 
@@ -233,43 +230,3 @@ The FSM implements **11 states** with comprehensive error handling:
 | **READ_STORE** | Store read data | `!rdata_fifo_full` → IDLE<br>`rdata_fifo_full` → ERROR |
 | **ERROR** | Handle errors | `bresp_ready` → IDLE |
 
-##  Simulation Results
-
-### Test Scenarios & Results
-
-```
-
-```
-
-### Performance Metrics
-
-
-##  Waveform Analysis
-
-### Key Signal Groups
-
-```bash
-# ModelSim commands
-add wave -group "Clock/Reset" /testbench/clk /testbench/reset
-add wave -group "AXI-AW" /testbench/awvalid /testbench/awready /testbench/awaddr
-add wave -group "AXI-W"  /testbench/wvalid /testbench/wready /testbench/wdata
-add wave -group "AXI-B"  /testbench/bvalid /testbench/bready /testbench/bresp
-add wave -group "AXI-AR" /testbench/arvalid /testbench/arready /testbench/araddr  
-add wave -group "AXI-R"  /testbench/rvalid /testbench/rready /testbench/rdata
-add wave -group "APB"    /testbench/psel /testbench/penable /testbench/paddr /testbench/pwrite
-add wave -group "FIFO"   /testbench/dut/req_fifo_full /testbench/dut/wdata_fifo_empty
-add wave -group "FSM"    /testbench/dut/u_fsm/state
-
-# Run simulation  
-run 20us
-```
-
-### Timing Analysis
-
-```
-```
-
----
-**Simulation Tool**: ModelSim  
-**Target**: 100MHz, 20μs runtime  
-**Status**: ✅ All tests passed 
